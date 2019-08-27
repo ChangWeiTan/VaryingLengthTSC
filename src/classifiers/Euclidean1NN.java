@@ -1,0 +1,180 @@
+/* Copyright (C) 2019 Chang Wei Tan, Francois Petitjean, Geoff Webb
+ This file is part of Varying length TSC.
+ Varying length TSC is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, version 3 of the License.
+ Varying length TSC is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ You should have received a copy of the GNU General Public License
+ along with Varying length TSC.  If not, see <http://www.gnu.org/licenses/>. */
+package classifiers;
+
+import data.Sequence;
+import data.Sequences;
+import dataProcessor.DataProcessor;
+import dataProcessor.NoProcessing;
+import dataProcessor.PrefixSuffixZeroPadder;
+import distances.Euclidean;
+import normalization.NoNormalizer;
+import normalization.Normalizer;
+import utilities.DataLoader;
+
+/**
+ * This is a class for 1NN Euclidean distance
+ *
+ * @author Chang Wei
+ */
+public class Euclidean1NN extends OneNearestNeighbour {
+    private Euclidean distComputer = new Euclidean();
+
+    public void summary() {
+        System.out.println("[CLASSIFIER SUMMARY] Classifier: Euclidean1NN");
+    }
+
+    public static void main(String[] args) throws Exception {
+        final int method = 0;
+        final String problem = "ECG200";
+        final String datasetPath = "C:/Users/" + System.getProperty("user.name") + "/workspace/Dataset/UCRArchive_2018_Uniform_Sampling/";
+        final DataProcessor dataProcessor = new NoProcessing();
+        final Normalizer normalizer = new NoNormalizer();
+        final DataLoader dataLoader = new DataLoader();
+        System.out.println(String.format("[Euclidean1NN] Problem:        %s", problem));
+
+        final Sequences trainData = dataLoader.loadTrainData(datasetPath, problem, dataProcessor, normalizer, method);
+        final Sequences testData = dataLoader.loadTestData(datasetPath, problem, dataProcessor, normalizer, method);
+        trainData.summary();
+        testData.summary();
+
+        final Euclidean1NN classifier = new Euclidean1NN();
+        classifier.buildClassifier(trainData);
+        classifier.summary();
+
+        System.out.println("[Euclidean1NN] Start Classifying");
+        final double accuracy = classifier.accuracy(testData);
+        final double accuracyLong = classifier.accuracyLong(testData);
+        final double accuracyShort = classifier.accuracyShort(testData);
+        System.out.println(String.format("[Euclidean1NN] Accuracy: %.4f", accuracy));
+        System.out.println(String.format("[Euclidean1NN] Accuracy Long: %.4f", accuracyLong));
+        System.out.println(String.format("[Euclidean1NN] Accuracy Short: %.4f", accuracyShort));
+    }
+
+
+    @Override
+    public double distance(final Sequence first, final Sequence second) {
+        return distComputer.distance(first, second);
+    }
+
+    @Override
+    public double distance(final Sequence first, final Sequence second, final double cutOffValue) {
+        return distComputer.distance(first, second, cutOffValue);
+    }
+
+    @Override
+    public void setParamsFromParamId(final int paramId) {
+
+    }
+
+    public double accuracyShort(final Sequences testData) {
+        final int testSize = testData.size();
+        int nCorrect = 0;
+
+        for (int i = 0; i < testSize; i++) {
+            final Sequence query = testData.get(i);
+            final int predictClass = classifyShort(query);
+            if (predictClass == query.getLabel()) nCorrect++;
+        }
+
+        return 1.0 * nCorrect / testSize;
+    }
+
+    public double accuracyLong(final Sequences testData) {
+        final int testSize = testData.size();
+        int nCorrect = 0;
+
+        for (int i = 0; i < testSize; i++) {
+            final Sequence query = testData.get(i);
+            final int predictClass = classifyLong(query);
+            if (predictClass == query.getLabel()) nCorrect++;
+        }
+
+        return 1.0 * nCorrect / testSize;
+    }
+
+    private int classifyShort(final Sequence query) {
+        final int queryLen = query.length();
+        int[] classCounts = new int[this.trainData.numClasses()];
+
+        double dist;
+
+        Sequence candidate = trainData.get(0);
+        double bsfDistance = distance(query, candidate);
+        int normFactor = Math.min(candidate.length(), queryLen);
+        double bsfDistanceNorm = bsfDistance / normFactor;
+        classCounts[candidate.getLabel()]++;
+
+        for (int candidateIndex = 1; candidateIndex < trainData.size(); candidateIndex++) {
+            candidate = trainData.get(candidateIndex);
+            normFactor = Math.min(candidate.length(), queryLen);
+            dist = distance(query, candidate);
+            final double distNorm = dist / normFactor;
+            if (distNorm < bsfDistanceNorm) {
+                bsfDistance = dist;
+                bsfDistanceNorm = distNorm;
+                classCounts = new int[trainData.numClasses()];
+                classCounts[candidate.getLabel()]++;
+            } else if (dist == bsfDistance) {
+                classCounts[candidate.getLabel()]++;
+            }
+        }
+
+        int bsfClass = -1;
+        double bsfCount = -1;
+        for (int i = 0; i < classCounts.length; i++) {
+            if (classCounts[i] > bsfCount) {
+                bsfCount = classCounts[i];
+                bsfClass = i;
+            }
+        }
+        return bsfClass;
+    }
+
+    private int classifyLong(final Sequence query) {
+        final int queryLen = query.length();
+        int[] classCounts = new int[this.trainData.numClasses()];
+
+        double dist;
+
+        Sequence candidate = trainData.get(0);
+        double bsfDistance = distance(query, candidate);
+        int normFactor = Math.max(candidate.length(), queryLen);
+        double bsfDistanceNorm = bsfDistance / normFactor;
+        classCounts[candidate.getLabel()]++;
+
+        for (int candidateIndex = 1; candidateIndex < trainData.size(); candidateIndex++) {
+            candidate = trainData.get(candidateIndex);
+            normFactor = Math.max(candidate.length(), queryLen);
+            dist = distance(query, candidate);
+            final double distNorm = dist / normFactor;
+            if (distNorm < bsfDistanceNorm) {
+                bsfDistance = dist;
+                bsfDistanceNorm = distNorm;
+                classCounts = new int[trainData.numClasses()];
+                classCounts[candidate.getLabel()]++;
+            } else if (dist == bsfDistance) {
+                classCounts[candidate.getLabel()]++;
+            }
+        }
+
+        int bsfClass = -1;
+        double bsfCount = -1;
+        for (int i = 0; i < classCounts.length; i++) {
+            if (classCounts[i] > bsfCount) {
+                bsfCount = classCounts[i];
+                bsfClass = i;
+            }
+        }
+        return bsfClass;
+    }
+}
